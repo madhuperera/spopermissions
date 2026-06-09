@@ -1,0 +1,10 @@
+# Generated reports
+reports/
+*.csv
+
+# Local config with tenant/client values
+config/settings.json
+
+# PowerShell / editor
+*.log
+.vscode/

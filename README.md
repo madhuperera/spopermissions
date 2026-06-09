@@ -30,38 +30,96 @@ target tenant **is** licensed for SAM, also consider the native report — see "
 
 - **PowerShell 7.2+**
 - **PnP.PowerShell** module: `Install-Module PnP.PowerShell -Scope CurrentUser`
-- An account with the **SharePoint Administrator** role (needed for tenant-wide enumeration and to read
-  permissions across site collections).
+- **Roles on the target tenant** (the *signed-in user*, not the app, must hold these):
+  - **SharePoint Administrator** — needed at *report time* for tenant-wide enumeration and to read
+    permissions across site collections.
+  - **Application Administrator**, **Cloud Application Administrator**, or **Global Administrator** —
+    needed once at *setup time* to register the Entra ID app **and grant it admin consent**. (An
+    *Application Developer* can register an app but **cannot** grant tenant-wide consent, so the setup
+    below will half-complete.)
 - **Your own Entra ID app registration** (PnP no longer ships a shared sign-in app since Sept 2024).
+  Step 1 below creates it.
 
-### One-time setup: register the Entra ID app
+## Setup
 
-You need an app registration that PnP PowerShell signs into. Easiest is PnP's helper:
+Do steps 1–2 **once** per tenant. Step 3 onward is the normal per-run flow.
+
+### Step 1 — Register the Entra ID app
+
+PnP PowerShell needs an Entra ID app registration to sign into. The `Register-PnPEntraIDAppForInteractiveLogin`
+cmdlet creates and configures one for you.
+
+> **Where do you run this?** In a plain **PowerShell 7** session on your own machine — **not** inside an
+> existing PnP connection. You do **not** run `Connect-PnPOnline` first. The cmdlet launches its **own**
+> browser sign-in to do the registration. So the only prerequisite is that the PnP module is installed.
 
 ```powershell
-Register-PnPEntraIDAppForInteractiveLogin -ApplicationName "SPOPermissions-Reporting" -Tenant contoso.onmicrosoft.com -Interactive
+# 1. Open a fresh PowerShell 7 terminal and load the module
+Import-Module PnP.PowerShell
+
+# 2. Create the app. Replace contoso.onmicrosoft.com with YOUR tenant's primary domain
+#    (find it at https://entra.microsoft.com -> Overview -> "Primary domain").
+Register-PnPEntraIDAppForInteractiveLogin `
+    -ApplicationName "SPOPermissions-Reporting" `
+    -Tenant contoso.onmicrosoft.com `
+    -SharePointDelegatePermissions "AllSites.FullControl" `
+    -GraphDelegatePermissions "User.Read.All","GroupMember.Read.All"
 ```
 
-This creates the app and prompts for admin consent. Note the **ClientId** it returns.
+> **No `-Interactive` switch.** Interactive browser sign-in is the **default** behaviour — there is no
+> `-Interactive` parameter (passing one throws *"A parameter cannot be found that matches parameter name
+> 'Interactive'"*). If your machine can't open a browser, add **`-DeviceLogin`** instead to use the device-code
+> flow (it prints a code to enter at https://microsoft.com/devicelogin).
 
-If creating the app manually in the Entra admin center, grant these **delegated** permissions and grant
-admin consent:
+What happens when you run it:
 
-- **SharePoint** → `AllSites.FullControl` (read permissions across all sites)
-- **Microsoft Graph** → `User.Read.All`, `GroupMember.Read.All` (resolve the user + transitive group
-  membership), and `Sites.FullControl.All` if you intend to also read site-level Graph permissions.
-- Add a public client / native redirect URI (`http://localhost`) for the interactive flow.
+1. A **browser window opens** (or, with `-DeviceLogin`, a code to enter) — sign in as an admin who can
+   register apps **and** consent (see Prerequisites). This first sign-in *creates* the app.
+2. The cmdlet waits ~60 seconds for the registration to propagate.
+3. A **second browser prompt** appears showing the requested permissions — click **Accept** to grant
+   tenant-wide admin consent.
+4. The cmdlet prints the new **ClientId** (a GUID). **Copy it** — you need it for every run (Step 3).
 
-> The signed-in **user** still needs the SharePoint Administrator role; the app delegated permissions
-> determine the API surface, the user's roles determine what data is actually returned.
+The `*DelegatePermissions` above are what this tool actually uses: `AllSites.FullControl` to read
+permissions across SharePoint sites, and `User.Read.All` + `GroupMember.Read.All` to resolve the target
+user and their transitive group membership. Add Graph `Sites.FullControl.All` only if you also intend to
+read site-level Graph permissions.
 
-## Install / import
+> **Why these are *delegated* permissions:** the tool acts **as the signed-in admin**, so the app's
+> delegated scopes set the API surface, while the admin's own roles (SharePoint Administrator) decide what
+> data actually comes back. That is why the user running the report still needs SharePoint Administrator —
+> the app permissions alone are not enough.
+
+### Step 1 (alternative) — Register the app manually
+
+If you'd rather not use the cmdlet, create the app in the **Entra admin center**
+(https://entra.microsoft.com → **App registrations** → **New registration**):
+
+- **Supported account types:** single tenant.
+- **Authentication →** add a **Mobile and desktop applications** (public client) platform with redirect
+  URI `http://localhost` — required for the interactive sign-in flow.
+- **API permissions →** add these **delegated** permissions, then **Grant admin consent**:
+  - **SharePoint** → `AllSites.FullControl`
+  - **Microsoft Graph** → `User.Read.All`, `GroupMember.Read.All` (and `Sites.FullControl.All` only if you
+    need site-level Graph permissions).
+- Copy the **Application (client) ID** from the app's **Overview** page — that is the ClientId for Step 3.
+
+### Step 2 — Confirm your roles
+
+Make sure the account you'll run reports with holds the **SharePoint Administrator** role (Microsoft 365
+admin center → **Roles**, or Entra ID → **Roles and administrators**). Without it the crawl connects but
+returns little or no permission data.
+
+### Step 3 — Install / import this tool
 
 ```powershell
 git clone <this-repo>
 cd SPOPermissions
 Import-Module ./src/SPOPermissions.psd1 -Force
 ```
+
+You'll supply the **ClientId** from Step 1 either in `config/settings.json` or via the `-ClientId`
+parameter when you connect (see Usage).
 
 ## Usage
 

@@ -159,7 +159,8 @@ Disconnect-SPOPermissions
 | `-SiteUrl` | One or more site URLs. Omit to crawl **all** tenant sites |
 | `-Depth` | `Site` \| `List` \| `File` (default `File`) |
 | `-OutputFolder` | Output location (default `./reports`) |
-| `-MaxItemsPerList` | Cap items inspected per list at `File` depth (0 = no cap) |
+| `-MaxItemsPerList` | Cap items inspected per list at `File` depth (0 = no cap). A flat **count** cap, **not** a depth control |
+| `-MaxFolderDepth` | Limit folder levels descended per library at `File` depth (`-1` = unlimited). See below |
 | `-IncludeOneDrive` | Include personal OneDrive sites in tenant enumeration |
 | `-IncludeHiddenLists` | Include hidden lists/libraries |
 | `-ExcludeBroadAccess` | Exclude Everyone / Org / Anyone (broad/potential) access |
@@ -169,7 +170,31 @@ Disconnect-SPOPermissions
 > **Performance:** `-Depth File` inspects every item with unique permissions, which is **one server
 > round-trip per item** and loads a list's items into memory. On large libraries this is slow and
 > throttle-prone. For whole-tenant runs prefer `-Depth List` (or `Site`) for discovery, then re-run
-> `-Depth File` against the specific sites of interest, and use `-MaxItemsPerList` as a guard.
+> `-Depth File` against the specific sites of interest, and use `-MaxFolderDepth` / `-MaxItemsPerList`
+> as guards.
+
+### Limiting how deep the crawl goes (`-MaxFolderDepth` vs `-MaxItemsPerList`)
+
+These two guards are different and easy to confuse:
+
+- **`-MaxFolderDepth N`** is a **true folder-depth limit**: how many folder levels below each library
+  root the `File` crawl descends. Depth is measured by an item's *containing folder*:
+  - `0` — library **root only**: root files and top-level folders are *listed* (you see `Folder1`
+    and its permissions) but **not entered**.
+  - `1` — **one folder level inside**: descend into the top-level folders (`Folder1`) and inspect
+    their direct contents (including that `Folder2` exists), but do **not** enter `Folder2`.
+  - `N` — descend `N` folder levels below the root. `-1` (default) = unlimited.
+- **`-MaxItemsPerList N`** is a **flat count cap**: it stops after N items in a single flat,
+  id-ordered stream (files *and* folders, all nesting), so it **cannot** express depth — a small cap
+  can stop inside one deep subfolder and never reach a sibling top-level folder. Use it only as a
+  runaway guard.
+
+Example — scan a library only to its first folder level (e.g. `…/Documents/Folder1`):
+
+```powershell
+Get-SPOUserAccessReport -UserPrincipalName jane.doe@contoso.com `
+    -SiteUrl https://contoso.sharepoint.com/sites/Finance -Depth File -MaxFolderDepth 1
+```
 
 ## Output
 

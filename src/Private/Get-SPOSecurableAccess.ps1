@@ -48,6 +48,7 @@ function Get-SPOSecurableAccess {
         [Parameter()] [ValidateSet('Site', 'List', 'File')] [string]$Depth = 'File',
         [Parameter(Mandatory)] [hashtable]$SPGroupCache,
         [Parameter()] [int]$MaxItemsPerList = 0,
+        [Parameter()] [int]$MaxFolderDepth = -1,
         [Parameter()] [switch]$IncludeHiddenLists,
         [Parameter()] [bool]$IncludeBroadClaims = $true,
         [Parameter()] [bool]$IncludeLimitedAccess = $false,
@@ -117,6 +118,7 @@ function Get-SPOSecurableAccess {
                 if ($Depth -eq 'File') {
                     Get-SPOListItemAccess -SiteUrl $SiteUrl -List $list -Identity $Identity `
                         -SPGroupCache $SPGroupCache -MaxItemsPerList $MaxItemsPerList `
+                        -MaxFolderDepth $MaxFolderDepth `
                         -IncludeBroadClaims $IncludeBroadClaims -IncludeLimitedAccess $IncludeLimitedAccess `
                         -SiteFileCount ([ref]$siteFileCount)
                 }
@@ -142,6 +144,7 @@ function Get-SPOListItemAccess {
         [Parameter(Mandatory)] $Identity,
         [Parameter(Mandatory)] [hashtable]$SPGroupCache,
         [Parameter()] [int]$MaxItemsPerList = 0,
+        [Parameter()] [int]$MaxFolderDepth = -1,
         [Parameter()] [bool]$IncludeBroadClaims = $true,
         [Parameter()] [bool]$IncludeLimitedAccess = $false,
         [Parameter()] [ref]$SiteFileCount
@@ -150,12 +153,37 @@ function Get-SPOListItemAccess {
     $isDocLib = ([string]$List.BaseType -eq 'DocumentLibrary')
     $inspected = 0
 
+    # Resolve the library root once so -MaxFolderDepth can measure each item's depth relative to it.
+    $listRoot = $null
+    if ($MaxFolderDepth -ge 0) {
+        try {
+            Get-PnPProperty -ClientObject $List -Property RootFolder | Out-Null
+            $listRoot = [string]$List.RootFolder.ServerRelativeUrl
+        }
+        catch { $listRoot = $null }
+        if (-not $listRoot) {
+            Write-Verbose "MaxFolderDepth set but could not resolve the root folder of '$($List.Title)'; depth filter disabled for this list."
+        }
+    }
+
     # Live status while the (potentially large) item set loads from the server.
     Write-Progress -Id 1 -ParentId 0 -Activity 'Inspecting items' `
         -Status "Loading items from list '$($List.Title)'..."
 
+    # Get-PnPListItem -PageSize STREAMS items to the pipeline page by page. When a cap is set we pipe
+    # through Select-Object -First so retrieval STOPS after that many items (it signals the upstream
+    # cmdlet to stop paging) - bounding both time and MEMORY. Assigning the bare cmdlet to a variable
+    # instead would buffer the ENTIRE library into RAM first (the cause of multi-GB runs), and the
+    # MaxItemsPerList cap would only apply afterwards. PageSize stays modest so at most one extra page
+    # beyond the cap is fetched.
     try {
-        $items = Get-PnPListItem -List $List -PageSize 500 -Fields 'FileRef', 'FileLeafRef', 'FileSystemObjectType' -ErrorAction Stop
+        if ($MaxItemsPerList -gt 0) {
+            $items = Get-PnPListItem -List $List -PageSize 500 -Fields 'FileRef', 'FileLeafRef', 'FileSystemObjectType' -ErrorAction Stop |
+                Select-Object -First $MaxItemsPerList
+        }
+        else {
+            $items = Get-PnPListItem -List $List -PageSize 500 -Fields 'FileRef', 'FileLeafRef', 'FileSystemObjectType' -ErrorAction Stop
+        }
     }
     catch {
         Write-Verbose "Could not enumerate items in list '$($List.Title)': $_"
@@ -163,10 +191,13 @@ function Get-SPOListItemAccess {
     }
 
     foreach ($item in $items) {
-        if ($MaxItemsPerList -gt 0 -and $inspected -ge $MaxItemsPerList) {
-            Write-Verbose "Reached MaxItemsPerList ($MaxItemsPerList) for '$($List.Title)'; stopping item scan."
-            break
+        # Folder-depth gate: skip items deeper than -MaxFolderDepth BEFORE the per-item permission
+        # round-trip. Depth -1 (item not under root, unclassifiable) is never skipped, to stay safe.
+        if ($MaxFolderDepth -ge 0 -and $listRoot) {
+            $depth = Get-SPOItemFolderDepth -ItemUrl ([string]$item['FileRef']) -RootUrl $listRoot
+            if ($depth -gt $MaxFolderDepth) { continue }
         }
+
         $inspected++
         if ($SiteFileCount) { $SiteFileCount.Value++ }
 

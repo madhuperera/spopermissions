@@ -33,6 +33,15 @@ function Get-SPOUserAccessReport {
 
     .PARAMETER MaxItemsPerList
         When Depth=File, cap items inspected per list (0 = no cap). Guards very large libraries.
+        This is a flat COUNT cap, not a depth control - use -MaxFolderDepth to limit folder levels.
+
+    .PARAMETER MaxFolderDepth
+        When Depth=File, limit how many folder levels below each library root the crawl descends
+        (-1 = unlimited, the default). Depth is measured by the item's containing folder:
+          0 = library root only - root files and top-level folders are listed but NOT entered.
+          1 = descend one folder level (into the top-level folders) and inspect their direct contents.
+          N = descend N folder levels below the root.
+        Unlike -MaxItemsPerList (a flat item-count cap), this is a true folder-depth limit.
 
     .PARAMETER IncludeOneDrive
         Include personal OneDrive sites when enumerating the whole tenant.
@@ -77,6 +86,10 @@ function Get-SPOUserAccessReport {
 
         [Parameter()]
         [int]$MaxItemsPerList = 0,
+
+        [Parameter()]
+        [ValidateRange(-1, [int]::MaxValue)]
+        [int]$MaxFolderDepth = -1,
 
         [Parameter()]
         [switch]$IncludeOneDrive,
@@ -132,7 +145,7 @@ function Get-SPOUserAccessReport {
         try {
             Connect-PnPOnline -Url $site -Interactive -ClientId $ctx.ClientId -ErrorAction Stop
             $siteRecords = Get-SPOSecurableAccess -SiteUrl $site -Identity $identity -Depth $Depth `
-                -SPGroupCache $spGroupCache -MaxItemsPerList $MaxItemsPerList `
+                -SPGroupCache $spGroupCache -MaxItemsPerList $MaxItemsPerList -MaxFolderDepth $MaxFolderDepth `
                 -IncludeHiddenLists:$IncludeHiddenLists -IncludeBroadClaims $includeBroad `
                 -IncludeLimitedAccess $IncludeLimitedAccess.IsPresent -ClientId $ctx.ClientId
             foreach ($r in $siteRecords) { $records.Add($r) }

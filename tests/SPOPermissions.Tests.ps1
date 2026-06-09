@@ -103,6 +103,41 @@ Describe 'Get-SPOSharingLinkScope' {
     }
 }
 
+Describe 'Get-SPOItemFolderDepth' {
+    BeforeAll { $root = '/sites/Finance/Shared Documents' }
+
+    It 'returns 0 for a file directly in the library root' {
+        Get-SPOItemFolderDepth -ItemUrl "$root/report.docx" -RootUrl $root | Should -Be 0
+    }
+    It 'returns 0 for a top-level folder (a root-level item)' {
+        Get-SPOItemFolderDepth -ItemUrl "$root/Folder1" -RootUrl $root | Should -Be 0
+    }
+    It 'returns 1 for a file inside a top-level folder' {
+        Get-SPOItemFolderDepth -ItemUrl "$root/Folder1/sub.docx" -RootUrl $root | Should -Be 1
+    }
+    It 'returns 1 for a second-level folder (its parent is one level down)' {
+        Get-SPOItemFolderDepth -ItemUrl "$root/Folder1/Folder2" -RootUrl $root | Should -Be 1
+    }
+    It 'returns 2 for a file two folder levels deep' {
+        Get-SPOItemFolderDepth -ItemUrl "$root/Folder1/Folder2/deep.docx" -RootUrl $root | Should -Be 2
+    }
+    It 'is case-insensitive on the root prefix' {
+        Get-SPOItemFolderDepth -ItemUrl "/sites/Finance/SHARED DOCUMENTS/Folder1/a.docx" -RootUrl $root | Should -Be 1
+    }
+    It 'tolerates trailing slashes' {
+        Get-SPOItemFolderDepth -ItemUrl "$root/Folder1/" -RootUrl "$root/" | Should -Be 0
+    }
+    It 'returns -1 when the item is not under the root (prefix collision is rejected)' {
+        Get-SPOItemFolderDepth -ItemUrl '/sites/Finance/Shared DocumentsArchive/a.docx' -RootUrl $root | Should -Be -1
+    }
+    It 'returns -1 for an unrelated path' {
+        Get-SPOItemFolderDepth -ItemUrl '/sites/Other/Docs/a.docx' -RootUrl $root | Should -Be -1
+    }
+    It 'returns -1 for an empty item url' {
+        Get-SPOItemFolderDepth -ItemUrl '' -RootUrl $root | Should -Be -1
+    }
+}
+
 Describe 'New-SPOAccessRecord' {
     It 'produces the documented schema' {
         $r = New-SPOAccessRecord -SiteUrl 'https://x' -ScopeType 'File' -Title 'a.docx' -ObjectUrl '/sites/x/a.docx' -AccessVia 'Direct' -Roles 'Edit' -AccessType 'RoleAssignment' -InheritanceBroken $true

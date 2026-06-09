@@ -41,6 +41,7 @@ param(
     [Parameter()] [string]$ClientId,
     [Parameter()] [string]$OutputFolder,
     [Parameter()] [int]$MaxItemsPerList = 0,
+    [Parameter()] [int]$MaxFolderDepth = -1,
     [Parameter()] [switch]$IncludeOneDrive,
     [Parameter()] [switch]$IncludeHiddenLists,
     [Parameter()] [switch]$ExcludeBroadAccess
@@ -76,6 +77,7 @@ try {
         Depth              = $Depth
         OutputFolder       = $OutputFolder
         MaxItemsPerList    = $MaxItemsPerList
+        MaxFolderDepth     = $MaxFolderDepth
         IncludeOneDrive    = $IncludeOneDrive
         IncludeHiddenLists = $IncludeHiddenLists
         ExcludeBroadAccess = $ExcludeBroadAccess

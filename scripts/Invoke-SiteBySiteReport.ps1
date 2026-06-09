@@ -57,8 +57,15 @@
     (unlimited) - or, equivalently, N >= the library's total item count. Note that folder objects
     themselves count toward N.
 
-    So use -MaxItemsPerList only as a throughput / runaway guard, never to express depth. A true
-    "folders-only" or "first level only" scan would require a module change (Tier 1).
+    So use -MaxItemsPerList only as a throughput / runaway guard, never to express depth. To limit
+    how deep the crawl descends, use -MaxFolderDepth instead.
+
+.PARAMETER MaxFolderDepth
+    When -Depth File, limit how many folder levels below each library root the crawl descends
+    (-1 = unlimited, the default). This IS a real folder-depth control (unlike -MaxItemsPerList):
+      0 = library root only - root files and top-level folders are listed but NOT entered.
+      1 = descend one folder level (into the top-level folders) and inspect their direct contents.
+      N = descend N folder levels below the root.
 
 .PARAMETER Url
     SharePoint URL to connect to (tenant root or admin). Overrides config/settings.json.
@@ -102,6 +109,7 @@ param(
     [Parameter()] [string]$SiteListPath,
     [Parameter()] [ValidateSet('Site', 'List', 'File')] [string]$Depth = 'File',
     [Parameter()] [int]$MaxItemsPerList = 0,
+    [Parameter()] [ValidateRange(-1, [int]::MaxValue)] [int]$MaxFolderDepth = -1,
     [Parameter()] [string]$Url,
     [Parameter()] [string]$ClientId,
     [Parameter()] [string]$OutputFolder,
@@ -216,6 +224,7 @@ try {
         try {
             $res = Get-SPOUserAccessReport -UserPrincipalName $UserPrincipalName -SiteUrl $site `
                 -Depth $Depth -OutputFolder $siteFolder -MaxItemsPerList $MaxItemsPerList `
+                -MaxFolderDepth $MaxFolderDepth `
                 -IncludeHiddenLists:$IncludeHiddenLists -ExcludeBroadAccess:$ExcludeBroadAccess
             $status  = 'Done'
             $rows    = $res.RecordCount

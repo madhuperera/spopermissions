@@ -105,7 +105,13 @@ Disconnect-SPOPermissions
 | `-IncludeOneDrive` | Include personal OneDrive sites in tenant enumeration |
 | `-IncludeHiddenLists` | Include hidden lists/libraries |
 | `-ExcludeBroadAccess` | Exclude Everyone / Org / Anyone (broad/potential) access |
+| `-IncludeLimitedAccess` | Include the system "Limited Access" traversal role (off by default; it's noise) |
 | `-PassThru` | Also return records to the pipeline |
+
+> **Performance:** `-Depth File` inspects every item with unique permissions, which is **one server
+> round-trip per item** and loads a list's items into memory. On large libraries this is slow and
+> throttle-prone. For whole-tenant runs prefer `-Depth List` (or `Site`) for discovery, then re-run
+> `-Depth File` against the specific sites of interest, and use `-MaxItemsPerList` as a guard.
 
 ## Output
 

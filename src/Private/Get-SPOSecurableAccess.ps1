@@ -50,6 +50,7 @@ function Get-SPOSecurableAccess {
         [Parameter()] [int]$MaxItemsPerList = 0,
         [Parameter()] [switch]$IncludeHiddenLists,
         [Parameter()] [bool]$IncludeBroadClaims = $true,
+        [Parameter()] [bool]$IncludeLimitedAccess = $false,
         [Parameter()] [string]$ClientId
     )
 
@@ -86,7 +87,7 @@ function Get-SPOSecurableAccess {
 
         # Evaluate a web only if it owns its permissions (root always does; subwebs only if broken).
         if ($isRoot -or $web.HasUniqueRoleAssignments) {
-            foreach ($m in (Resolve-SPOAccessVia -Securable $web -Identity $Identity -SPGroupCache $SPGroupCache -IncludeBroadClaims $IncludeBroadClaims)) {
+            foreach ($m in (Resolve-SPOAccessVia -Securable $web -Identity $Identity -SPGroupCache $SPGroupCache -IncludeBroadClaims $IncludeBroadClaims -IncludeLimitedAccess $IncludeLimitedAccess)) {
                 New-SPOAccessRecord -SiteUrl $SiteUrl -ScopeType 'Web' -Title $web.Title `
                     -ObjectUrl $web.ServerRelativeUrl -AccessVia $m.AccessVia -Roles $m.Roles `
                     -AccessType $m.AccessType -Notes $m.Notes -InheritanceBroken (-not $isRoot)
@@ -101,7 +102,7 @@ function Get-SPOSecurableAccess {
 
             if ($list.HasUniqueRoleAssignments) {
                 Get-PnPProperty -ClientObject $list -Property RootFolder | Out-Null
-                foreach ($m in (Resolve-SPOAccessVia -Securable $list -Identity $Identity -SPGroupCache $SPGroupCache -IncludeBroadClaims $IncludeBroadClaims)) {
+                foreach ($m in (Resolve-SPOAccessVia -Securable $list -Identity $Identity -SPGroupCache $SPGroupCache -IncludeBroadClaims $IncludeBroadClaims -IncludeLimitedAccess $IncludeLimitedAccess)) {
                     New-SPOAccessRecord -SiteUrl $SiteUrl -ScopeType 'List' -Title $list.Title `
                         -ObjectUrl $list.RootFolder.ServerRelativeUrl -AccessVia $m.AccessVia -Roles $m.Roles `
                         -AccessType $m.AccessType -Notes $m.Notes -InheritanceBroken $true
@@ -110,7 +111,8 @@ function Get-SPOSecurableAccess {
 
             if ($Depth -eq 'File') {
                 Get-SPOListItemAccess -SiteUrl $SiteUrl -List $list -Identity $Identity `
-                    -SPGroupCache $SPGroupCache -MaxItemsPerList $MaxItemsPerList -IncludeBroadClaims $IncludeBroadClaims
+                    -SPGroupCache $SPGroupCache -MaxItemsPerList $MaxItemsPerList `
+                    -IncludeBroadClaims $IncludeBroadClaims -IncludeLimitedAccess $IncludeLimitedAccess
             }
         }
     }
@@ -128,7 +130,8 @@ function Get-SPOListItemAccess {
         [Parameter(Mandatory)] $Identity,
         [Parameter(Mandatory)] [hashtable]$SPGroupCache,
         [Parameter()] [int]$MaxItemsPerList = 0,
-        [Parameter()] [bool]$IncludeBroadClaims = $true
+        [Parameter()] [bool]$IncludeBroadClaims = $true,
+        [Parameter()] [bool]$IncludeLimitedAccess = $false
     )
 
     $isDocLib = ([string]$List.BaseType -eq 'DocumentLibrary')
@@ -159,7 +162,7 @@ function Get-SPOListItemAccess {
         $objUrl = [string]$item['FileRef']
         $title  = [string]$item['FileLeafRef']
 
-        foreach ($m in (Resolve-SPOAccessVia -Securable $item -Identity $Identity -SPGroupCache $SPGroupCache -IncludeBroadClaims $IncludeBroadClaims)) {
+        foreach ($m in (Resolve-SPOAccessVia -Securable $item -Identity $Identity -SPGroupCache $SPGroupCache -IncludeBroadClaims $IncludeBroadClaims -IncludeLimitedAccess $IncludeLimitedAccess)) {
             New-SPOAccessRecord -SiteUrl $SiteUrl -ScopeType $scopeType -Title $title `
                 -ObjectUrl $objUrl -AccessVia $m.AccessVia -Roles $m.Roles `
                 -AccessType $m.AccessType -Notes $m.Notes -InheritanceBroken $true

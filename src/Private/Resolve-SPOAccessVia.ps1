@@ -91,7 +91,7 @@ function Resolve-SPOAccessVia {
                 $inner = Resolve-SPOSharePointGroupMatch -Group $member -Identity $Identity `
                             -SPGroupCache $SPGroupCache -IncludeBroadClaims $IncludeBroadClaims
                 if ($inner) {
-                    Add-Match "SharingLink:$scope" $roles 'SharingLink' 'User is an explicit target of this sharing link.'
+                    Add-Match "SharingLink:$scope" $roles 'SharingLink' 'User is listed as a target of this sharing link. (Link scope is inferred from the group name and may be approximate.)'
                 }
                 elseif ($IncludeBroadClaims -and $scope -in 'Organization', 'Anyone') {
                     Add-Match "SharingLink:$scope" $roles 'SharingLink' 'Broad link - grants access without listing the user explicitly (potential access).'

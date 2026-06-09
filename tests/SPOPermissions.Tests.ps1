@@ -114,3 +114,21 @@ Describe 'New-SPOAccessRecord' {
         { New-SPOAccessRecord -SiteUrl 'https://x' -ScopeType 'Bogus' } | Should -Throw
     }
 }
+
+Describe 'Write-SPOAccessOutput' {
+    It 'writes a header-only CSV (matching the schema) when there are no records' {
+        $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("spoperm_" + [guid]::NewGuid())
+        try {
+            $meta = @{ DisplayName = 'X'; Depth = 'File'; ScopeDescription = '1 site'; Duration = '0'; SitesTotal = 1; SitesScanned = 1; SitesError = 0; Errors = @() }
+            $out = Write-SPOAccessOutput -Records @() -OutputFolder $tmp -UserPrincipalName 'jane@contoso.com' -RunMeta $meta
+            $out.RecordCount | Should -Be 0
+            Test-Path $out.CsvPath   | Should -BeTrue
+            Test-Path $out.NotesPath | Should -BeTrue
+            $expected = (New-SPOAccessRecord -SiteUrl '-' -ScopeType 'Web').PSObject.Properties.Name -join ','
+            (Get-Content -LiteralPath $out.CsvPath -TotalCount 1) | Should -Be $expected
+        }
+        finally {
+            if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
+        }
+    }
+}

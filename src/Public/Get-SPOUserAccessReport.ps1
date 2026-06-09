@@ -44,6 +44,10 @@ function Get-SPOUserAccessReport {
         Exclude broad/potential access (Everyone / Everyone-except-external claims and
         Organization/Anyone sharing links). By default these ARE included and flagged as potential.
 
+    .PARAMETER IncludeLimitedAccess
+        Include the system "Limited Access" role in results. Off by default - SharePoint grants it
+        automatically just to allow traversal to a child item, so it is noise rather than meaningful access.
+
     .PARAMETER PassThru
         Also return the access records to the pipeline (in addition to writing files).
 
@@ -82,6 +86,9 @@ function Get-SPOUserAccessReport {
 
         [Parameter()]
         [switch]$ExcludeBroadAccess,
+
+        [Parameter()]
+        [switch]$IncludeLimitedAccess,
 
         [Parameter()]
         [switch]$PassThru
@@ -127,7 +134,7 @@ function Get-SPOUserAccessReport {
             $siteRecords = Get-SPOSecurableAccess -SiteUrl $site -Identity $identity -Depth $Depth `
                 -SPGroupCache $spGroupCache -MaxItemsPerList $MaxItemsPerList `
                 -IncludeHiddenLists:$IncludeHiddenLists -IncludeBroadClaims $includeBroad `
-                -ClientId $ctx.ClientId
+                -IncludeLimitedAccess $IncludeLimitedAccess.IsPresent -ClientId $ctx.ClientId
             foreach ($r in $siteRecords) { $records.Add($r) }
             $sitesScanned++
         }

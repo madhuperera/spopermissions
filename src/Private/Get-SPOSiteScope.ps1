@@ -32,10 +32,16 @@ function Get-SPOSiteScope {
     }
 
     Write-Verbose 'Enumerating all site collections via Get-PnPTenantSite...'
-    $sites = Get-PnPTenantSite -ErrorAction Stop |
-        Where-Object { $_.Template -notin 'RedirectSite#0' }
+    # Get-PnPTenantSite excludes OneDrive sites unless -IncludeOneDriveSites is passed, so the flag
+    # must be threaded through here (filtering alone would never see them).
+    $tenantParams = @{ ErrorAction = 'Stop' }
+    if ($IncludeOneDrive) { $tenantParams['IncludeOneDriveSites'] = $true }
+
+    $sites = Get-PnPTenantSite @tenantParams |
+        Where-Object { $_.Template -ne 'RedirectSite#0' }
 
     if (-not $IncludeOneDrive) {
+        # Belt-and-braces in case any personal sites slip through.
         $sites = $sites | Where-Object {
             $_.Url -notmatch '-my\.sharepoint\.com' -and $_.Template -notlike 'SPSPERS*'
         }

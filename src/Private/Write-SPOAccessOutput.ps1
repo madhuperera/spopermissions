@@ -38,8 +38,10 @@ function Write-SPOAccessOutput {
         $Records | Export-Csv -LiteralPath $csvPath -NoTypeInformation -Encoding UTF8
     }
     else {
-        'SiteUrl,ScopeType,Title,ObjectUrl,AccessType,AccessVia,Roles,InheritanceBroken,Notes' |
-            Set-Content -LiteralPath $csvPath -Encoding UTF8
+        # Derive the header from the record factory so it never drifts from the real schema.
+        # Values are irrelevant here - we only read the property names.
+        $header = (New-SPOAccessRecord -SiteUrl '-' -ScopeType 'Web').PSObject.Properties.Name -join ','
+        $header | Set-Content -LiteralPath $csvPath -Encoding UTF8
     }
 
     # Summary

@@ -53,8 +53,16 @@ pass), and labels it `AccessType = SharingLink`:
   **potential (broad) access** and only when broad access is included (the default; disable with
   `-ExcludeBroadAccess`). "Anyone" links also grant anonymous/external access.
 
-Known gaps: sharing-link metadata exposed through PnP/Graph can be incomplete, and some externally-shared
-or expired links may be under- or over-represented. Treat the sharing-link rows as indicative.
+Known gaps:
+
+- Sharing-link metadata exposed through PnP/Graph can be incomplete, and some externally-shared or
+  expired links may be under- or over-represented. Treat the sharing-link rows as indicative.
+- The **link scope** (`Specific`/`Organization`/`Anyone`) is **inferred from the hidden group's name**.
+  Modern "Flexible" links can be configured for specific people, the organization, or anyone, and the scope
+  is not always fully determinable from the name alone, so the scope label may be approximate. The
+  *membership* match (user is listed in the link group) is reliable; the scope label is best-effort.
+- Membership of some sharing-link groups may not be enumerable via `Get-PnPGroupMember`; when expansion
+  fails the link is skipped (logged with `-Verbose`).
 
 ## 4. Group nesting & dynamic groups
 
@@ -66,6 +74,10 @@ on Graph's own evaluation:
   Graph's current calculation, which can lag.
 - SharePoint groups are expanded live via `Get-PnPGroupMember`; nested Entra groups inside a SharePoint
   group are matched against the same transitive membership set.
+- The user's group set is the **union of `transitiveMemberOf` and `ownedObjects`**, so access granted to
+  Microsoft 365 group **owners** (the `..._o` owners claim) is captured even when the owner is not also a
+  member. If Graph cannot return membership (e.g. missing consent), a warning is emitted and indirect
+  access is under-reported.
 
 ## 5. Scope, freshness & permissions to run
 

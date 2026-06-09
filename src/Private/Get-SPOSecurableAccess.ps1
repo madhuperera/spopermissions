@@ -54,6 +54,10 @@ function Get-SPOSecurableAccess {
         [Parameter()] [string]$ClientId
     )
 
+    # Running count of items inspected across this whole site collection (all webs + lists),
+    # surfaced live via Write-Progress so a long file-depth crawl visibly advances.
+    $siteFileCount = 0
+
     # Collect the root web plus every subweb URL (from the current root connection).
     $rootUrl = $SiteUrl.TrimEnd('/')
     $webUrls = [System.Collections.Generic.List[string]]::new()
@@ -68,53 +72,61 @@ function Get-SPOSecurableAccess {
         Write-Verbose "Could not enumerate subwebs of $SiteUrl : $_"
     }
 
-    foreach ($webUrl in $webUrls) {
-        $isRoot = ($webUrl -eq $rootUrl)
+    try {
+        foreach ($webUrl in $webUrls) {
+            $isRoot = ($webUrl -eq $rootUrl)
 
-        # Bind the connection to THIS web so Get-PnPList / Get-PnPListItem return its own lists.
-        # (One SharePoint token covers the whole tenant, so subweb reconnects are silent.)
-        if (-not $isRoot) {
-            try {
-                Connect-PnPOnline -Url $webUrl -Interactive -ClientId $ClientId -ErrorAction Stop
-            }
-            catch {
-                Write-Verbose "Could not connect to subweb $webUrl : $_"
-                continue
-            }
-        }
-
-        $web = Get-PnPWeb -Includes HasUniqueRoleAssignments, Url, Title, ServerRelativeUrl
-
-        # Evaluate a web only if it owns its permissions (root always does; subwebs only if broken).
-        if ($isRoot -or $web.HasUniqueRoleAssignments) {
-            foreach ($m in (Resolve-SPOAccessVia -Securable $web -Identity $Identity -SPGroupCache $SPGroupCache -IncludeBroadClaims $IncludeBroadClaims -IncludeLimitedAccess $IncludeLimitedAccess)) {
-                New-SPOAccessRecord -SiteUrl $SiteUrl -ScopeType 'Web' -Title $web.Title `
-                    -ObjectUrl $web.ServerRelativeUrl -AccessVia $m.AccessVia -Roles $m.Roles `
-                    -AccessType $m.AccessType -Notes $m.Notes -InheritanceBroken (-not $isRoot)
-            }
-        }
-
-        if ($Depth -eq 'Site') { continue }
-
-        $lists = Get-PnPList -Includes HasUniqueRoleAssignments, Hidden, Title, BaseType, RootFolder, ItemCount
-        foreach ($list in $lists) {
-            if (-not $IncludeHiddenLists -and $list.Hidden) { continue }
-
-            if ($list.HasUniqueRoleAssignments) {
-                Get-PnPProperty -ClientObject $list -Property RootFolder | Out-Null
-                foreach ($m in (Resolve-SPOAccessVia -Securable $list -Identity $Identity -SPGroupCache $SPGroupCache -IncludeBroadClaims $IncludeBroadClaims -IncludeLimitedAccess $IncludeLimitedAccess)) {
-                    New-SPOAccessRecord -SiteUrl $SiteUrl -ScopeType 'List' -Title $list.Title `
-                        -ObjectUrl $list.RootFolder.ServerRelativeUrl -AccessVia $m.AccessVia -Roles $m.Roles `
-                        -AccessType $m.AccessType -Notes $m.Notes -InheritanceBroken $true
+            # Bind the connection to THIS web so Get-PnPList / Get-PnPListItem return its own lists.
+            # (One SharePoint token covers the whole tenant, so subweb reconnects are silent.)
+            if (-not $isRoot) {
+                try {
+                    Connect-PnPOnline -Url $webUrl -Interactive -ClientId $ClientId -ErrorAction Stop
+                }
+                catch {
+                    Write-Verbose "Could not connect to subweb $webUrl : $_"
+                    continue
                 }
             }
 
-            if ($Depth -eq 'File') {
-                Get-SPOListItemAccess -SiteUrl $SiteUrl -List $list -Identity $Identity `
-                    -SPGroupCache $SPGroupCache -MaxItemsPerList $MaxItemsPerList `
-                    -IncludeBroadClaims $IncludeBroadClaims -IncludeLimitedAccess $IncludeLimitedAccess
+            $web = Get-PnPWeb -Includes HasUniqueRoleAssignments, Url, Title, ServerRelativeUrl
+
+            # Evaluate a web only if it owns its permissions (root always does; subwebs only if broken).
+            if ($isRoot -or $web.HasUniqueRoleAssignments) {
+                foreach ($m in (Resolve-SPOAccessVia -Securable $web -Identity $Identity -SPGroupCache $SPGroupCache -IncludeBroadClaims $IncludeBroadClaims -IncludeLimitedAccess $IncludeLimitedAccess)) {
+                    New-SPOAccessRecord -SiteUrl $SiteUrl -ScopeType 'Web' -Title $web.Title `
+                        -ObjectUrl $web.ServerRelativeUrl -AccessVia $m.AccessVia -Roles $m.Roles `
+                        -AccessType $m.AccessType -Notes $m.Notes -InheritanceBroken (-not $isRoot)
+                }
+            }
+
+            if ($Depth -eq 'Site') { continue }
+
+            $lists = Get-PnPList -Includes HasUniqueRoleAssignments, Hidden, Title, BaseType, RootFolder, ItemCount
+            foreach ($list in $lists) {
+                if (-not $IncludeHiddenLists -and $list.Hidden) { continue }
+
+                if ($list.HasUniqueRoleAssignments) {
+                    Get-PnPProperty -ClientObject $list -Property RootFolder | Out-Null
+                    foreach ($m in (Resolve-SPOAccessVia -Securable $list -Identity $Identity -SPGroupCache $SPGroupCache -IncludeBroadClaims $IncludeBroadClaims -IncludeLimitedAccess $IncludeLimitedAccess)) {
+                        New-SPOAccessRecord -SiteUrl $SiteUrl -ScopeType 'List' -Title $list.Title `
+                            -ObjectUrl $list.RootFolder.ServerRelativeUrl -AccessVia $m.AccessVia -Roles $m.Roles `
+                            -AccessType $m.AccessType -Notes $m.Notes -InheritanceBroken $true
+                    }
+                }
+
+                if ($Depth -eq 'File') {
+                    Get-SPOListItemAccess -SiteUrl $SiteUrl -List $list -Identity $Identity `
+                        -SPGroupCache $SPGroupCache -MaxItemsPerList $MaxItemsPerList `
+                        -IncludeBroadClaims $IncludeBroadClaims -IncludeLimitedAccess $IncludeLimitedAccess `
+                        -SiteFileCount ([ref]$siteFileCount)
+                }
             }
         }
+    }
+    finally {
+        # Clear the nested per-item progress bar once this site collection is done - even if the
+        # crawl threw partway through, so a stale bar never lingers into the next site.
+        Write-Progress -Id 1 -Activity 'Inspecting items' -Completed
     }
 }
 
@@ -131,11 +143,16 @@ function Get-SPOListItemAccess {
         [Parameter(Mandatory)] [hashtable]$SPGroupCache,
         [Parameter()] [int]$MaxItemsPerList = 0,
         [Parameter()] [bool]$IncludeBroadClaims = $true,
-        [Parameter()] [bool]$IncludeLimitedAccess = $false
+        [Parameter()] [bool]$IncludeLimitedAccess = $false,
+        [Parameter()] [ref]$SiteFileCount
     )
 
     $isDocLib = ([string]$List.BaseType -eq 'DocumentLibrary')
     $inspected = 0
+
+    # Live status while the (potentially large) item set loads from the server.
+    Write-Progress -Id 1 -ParentId 0 -Activity 'Inspecting items' `
+        -Status "Loading items from list '$($List.Title)'..."
 
     try {
         $items = Get-PnPListItem -List $List -PageSize 500 -Fields 'FileRef', 'FileLeafRef', 'FileSystemObjectType' -ErrorAction Stop
@@ -151,6 +168,23 @@ function Get-SPOListItemAccess {
             break
         }
         $inspected++
+        if ($SiteFileCount) { $SiteFileCount.Value++ }
+
+        # Show every item as it is processed: per-site running count + the current file/item.
+        $leaf = [string]$item['FileLeafRef']
+        if (-not $leaf) { $leaf = "Item $($item.Id)" }
+        $siteCount = if ($SiteFileCount) { $SiteFileCount.Value } else { $inspected }
+        Write-Progress -Id 1 -ParentId 0 `
+            -Activity ("Inspecting items - {0} processed this site" -f $siteCount) `
+            -Status ("List '{0}' ({1} items): {2}" -f $List.Title, $List.ItemCount, $leaf) `
+            -CurrentOperation ([string]$item['FileRef'])
+
+        # Durable heartbeat for the transcript / run.log (Write-Progress is NOT captured there).
+        # Throttled to avoid flooding: one line every 1000 items.
+        if (($siteCount % 1000) -eq 0) {
+            Write-Host ("  [{0}] {1} items inspected (current list '{2}', file: {3})" -f `
+                (Get-Date -Format 'HH:mm:ss'), $siteCount, $List.Title, $leaf)
+        }
 
         $hasUnique = $false
         try { $hasUnique = Get-PnPProperty -ClientObject $item -Property HasUniqueRoleAssignments }
